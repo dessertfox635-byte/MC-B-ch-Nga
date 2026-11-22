@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Xưởng Phim – overlay engine</title>
+<style>
+  @font-face { font-family: "BVP"; src: url("fonts/BeVietnamPro-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "BVP"; src: url("fonts/BeVietnamPro-Bold.ttf"); font-weight: 700; }
+  @font-face { font-family: "BVP"; src: url("fonts/BeVietnamPro-ExtraBold.ttf"); font-weight: 800; }
+  @font-face { font-family: "BVP"; src: url("fonts/BeVietnamPro-Black.ttf"); font-weight: 900; }
+  @font-face { font-family: "BVPM"; src: url("fonts/BeVietnamPro-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "Paytone"; src: url("fonts/PaytoneOne-Regular.ttf"); }
+  @font-face { font-family: "Anton"; src: url("fonts/Anton-Regular.ttf"); }
+  html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+  body.preview { background: #333 url("") center/cover no-repeat; }
+  #stage { position: relative; overflow: hidden; font-family: "BVP", sans-serif; color: #fff; }
+  .ov { position: absolute; box-sizing: border-box; will-change: transform, opacity; }
+  .shadow { text-shadow: 0 0.04em 0.12em rgba(0,0,0,.55); }
+  .word { display: inline-block; white-space: pre; }
+  /* Tách lớp cho hiệu ứng chiều sâu: lớp "behind" nằm dưới người, lớp "front" nằm trên */
+  body.layer-front [data-layer="behind"] { visibility: hidden !important; }
+  body.layer-behind .ov { visibility: hidden !important; }
+  body.layer-behind [data-layer="behind"] { visibility: visible !important; }
+</style>
+<link rel="stylesheet" href="effects.css">
+</head>
+<body>
+<div id="stage"></div>
+<script src="../node_modules/gsap/dist/gsap.min.js"></script>
+<script src="effects.js"></script>
+<script src="kinetic.js"></script>
+<script>
+/*
+ * Contract (used by render/overlay.mjs and xuong/qa.py):
+ *   await window.XUONG.init(spec)   -> builds DOM + paused GSAP master timeline
+ *   window.XUONG.seek(t)            -> sets the frame at t seconds (deterministic)
+ *   window.XUONG.layout(t)          -> [{id, kind, zone, x, y, w, h}] of visible elements at t
+ * spec = { format:{w,h,fps}, theme:{...}, overlays:[...], captions:{style, pages:[...]}, duration }
+ */
+window.XUONG = (() => {
+  let master = null, items = [], spec = null;
+
+  async function init(s) {
+    spec = s;
+    const { w, h } = s.format;
+    const stage = document.getElementById("stage");
+    stage.style.width = w + "px"; stage.style.height = h + "px";
+    document.documentElement.style.setProperty("--u", (Math.min(w, h) / 1080) + "px");
+    applyTheme(s.theme || {});
+    await Promise.all(["BVP", "BVPM", "Paytone", "Anton"].map(f => document.fonts.load(`40px ${f}`, "Aăâđêôơư")));
+    await document.fonts.ready;
+    master = gsap.timeline({ paused: true });
+    items = [];
+    const faces = (s.faces || []).filter(f => f.box);
+    const faceAt = t => {
+      if (!faces.length) return null;
+      let best = null, bd = 1e9;
+      for (const f of faces) { const d = Math.abs(f.t - t); if (d < bd) { bd = d; best = f; } }
+      return bd <= 0.8 ? best.box : null;
+    };
+    const ctx = { w, h, stage, theme: s.theme || {}, vertical: h > w, faceAt };
+    // vùng đang bị hiệu ứng khác chiếm trong khoảng [a,b] – chữ kinetic phải né
+    ctx.busy = (a, b) => (s.overlays || []).filter(o => EFFECTS[o.type] && o.start < b && a < o.end)
+      .map(o => zoneRect(o.zone || EFFECTS[o.type].zone, ctx));
+    for (const ov of (s.overlays || [])) {
+      const fx = EFFECTS[ov.type];
+      if (!fx) throw new Error("Hiệu ứng không tồn tại: " + ov.type);
+      const el = document.createElement("div");
+      el.className = "ov fx-" + ov.type;
+      el.dataset.id = ov.id; el.dataset.kind = "overlay"; el.dataset.zone = ov.zone || fx.zone;
+      stage.appendChild(el);
+      const tl = fx.build(el, ov, ctx);          // returns a timeline starting at 0
+      placeInZone(el, el.dataset.zone, ctx, ov);
+      fitText(el, ctx);
+      gsap.set(el, { autoAlpha: 0 });
+      master.set(el, { autoAlpha: 1 }, ov.start);
+      master.add(tl, ov.start);
+      master.set(el, { autoAlpha: 0 }, ov.end);
+      const settle = tl.labels && tl.labels.settled !== undefined ? tl.labels.settled : 0.55;
+      items.push({ el, start: ov.start, end: ov.end, settle });
+    }
+    const capList = s.captions ? (s.captions.phrases || s.captions.pages || []) : [];
+    if (capList.length) {
+      const cap = CAPTIONS[s.captions.style || "pop"];
+      if (!cap) throw new Error("Kiểu phụ đề không tồn tại: " + s.captions.style);
+      for (const page of capList) {
+        const el = document.createElement("div");
+        el.className = "ov cap cap-" + (s.captions.style || "pop");
+        el.dataset.id = "cap-" + page.i; el.dataset.kind = "caption"; el.dataset.zone = s.captions.zone || "lower";
+        stage.appendChild(el);
+        const tl = cap.build(el, page, ctx);
+        if (!cap.custom) { placeInZone(el, el.dataset.zone, ctx, {}); fitText(el, ctx); }
+        gsap.set(el, { autoAlpha: 0 });
+        master.set(el, { autoAlpha: 1 }, page.start);
+        master.add(tl, page.start);
+        master.set(el, { autoAlpha: 0 }, page.end);
+        items.push({ el, start: page.start, end: page.end });
+      }
+    }
+    master.set({}, {}, s.duration || master.duration());
+    master.seek(0, false);
+    return { duration: master.duration(), count: items.length };
+  }
+
+  function applyTheme(t) {
+    const r = document.documentElement.style;
+    r.setProperty("--accent", t.accent || "#FFD23F");
+    r.setProperty("--accent2", t.accent2 || "#FF4D6D");
+    r.setProperty("--ink", t.ink || "#111111");
+    r.setProperty("--paper", t.paper || "#FFFFFF");
+  }
+
+  // Zones are fractions of the frame. Vertical (9:16) zones keep clear of TikTok/Reels UI:
+  // top bar ~7%, right action rail ~12%, bottom caption/UI ~22%.
+  const ZONES_V = {
+    top:    { x: .08, y: .11, w: .76, h: .24 },
+    center: { x: .08, y: .38, w: .76, h: .22 },
+    lower:  { x: .07, y: .62, w: .78, h: .14 },
+    full:   { x: .08, y: .11, w: .76, h: .65 }
+  };
+  const ZONES_H = {
+    top:    { x: .08, y: .07, w: .84, h: .26 },
+    center: { x: .20, y: .36, w: .60, h: .28 },
+    lower:  { x: .10, y: .74, w: .80, h: .17 },
+    full:   { x: .06, y: .07, w: .88, h: .84 }
+  };
+  function zoneRect(zone, ctx) {
+    const z = (ctx.vertical ? ZONES_V : ZONES_H)[zone] || ZONES_V.center;
+    return { x: z.x * ctx.w, y: z.y * ctx.h, w: z.w * ctx.w, h: z.h * ctx.h };
+  }
+  function placeInZone(el, zone, ctx, ov) {
+    const r = zoneRect(zone, ctx);
+    el.style.left = r.x + "px"; el.style.top = r.y + "px";
+    el.style.width = r.w + "px"; el.style.height = r.h + "px";
+    el.style.display = "flex"; el.style.flexDirection = "column";
+    el.style.justifyContent = ov.valign || (zone === "lower" ? "flex-start" : "center");
+    el.style.alignItems = ov.align || "center";
+  }
+  // Shrink font until the content fits its zone box (no clipping, no spilling into another zone).
+  // Measured on a clone with every animation state stripped: GSAP from() leaves transforms that
+  // count toward overflow and would make text shrink for no reason.
+  function fitText(el, ctx) {
+    const probe = el.cloneNode(true);
+    probe.querySelectorAll("*").forEach(n => { n.style.transform = ""; n.style.translate = ""; n.style.rotate = "";
+      n.style.scale = ""; n.style.opacity = ""; n.style.visibility = ""; n.style.display = n.style.display === "none" ? "" : n.style.display; });
+    probe.style.transform = ""; probe.style.visibility = "hidden"; probe.style.opacity = "1";
+    el.parentNode.appendChild(probe);
+    let guard = 40;
+    let f = 1;
+    const over = () => probe.scrollHeight > probe.clientHeight + 1 || probe.scrollWidth > probe.clientWidth + 1;
+    while (guard-- > 0 && over()) { f *= 0.93; probe.style.setProperty("--fit", f); }
+    probe.remove();
+    if (f !== 1) el.style.setProperty("--fit", f);
+    el.dataset.fit = f.toFixed(2);
+  }
+
+  function seek(t) { master.seek(t, false); }
+
+  function layout(t) {
+    if (t !== undefined) seek(t);
+    const out = [];
+    for (const { el, start, end, settle } of items) {
+      const cs = getComputedStyle(el);
+      if (parseFloat(cs.opacity) < 0.05 || (cs.visibility === "hidden" && !el.dataset.split)) continue;
+      const settled = t === undefined || (el.dataset.kind === "caption"
+        ? (t >= start + 0.15 && t <= end - 0.05) : (t >= start + (settle ?? 0.55) && t <= end - 0.3));
+      if (el.dataset.split) {     // chữ kinetic: mỗi từ là một hộp riêng, cùng nhóm
+        el.querySelectorAll("[data-ink]").forEach((n, j) => {
+          let vis = getComputedStyle(n).visibility !== "hidden", p = n;
+          while (vis && p && p !== el) { if (parseFloat(getComputedStyle(p).opacity) < 0.05) { vis = false; break; } p = p.parentElement; }
+          const r = n.getBoundingClientRect();
+          if (!vis || r.width < 1 || r.height < 1) return;
+          const holder = n.closest("[data-t0]");
+          const wordSettled = settled && (t === undefined || !holder || t >= +holder.dataset.t0 + 0.5);
+          out.push({ id: el.dataset.id + "." + j, group: el.dataset.id, kind: "caption", zone: "free", fit: 1, settled: wordSettled,
+                     layer: n.closest('[data-layer="behind"]') ? "behind" : "front",
+                     hero: !!n.closest(".kin-hero"), x: r.left, y: r.top, w: r.width, h: r.height });
+        });
+        continue;
+      }
+      // union of visible children boxes = what the viewer actually sees
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      const nodes = el.querySelectorAll("[data-ink]");
+      (nodes.length ? nodes : [el]).forEach(n => {
+        const r = n.getBoundingClientRect();
+        const op = parseFloat(getComputedStyle(n).opacity);
+        if (r.width < 1 || r.height < 1 || op < 0.05) return;
+        x0 = Math.min(x0, r.left); y0 = Math.min(y0, r.top); x1 = Math.max(x1, r.right); y1 = Math.max(y1, r.bottom);
+      });
+      if (x0 === Infinity) continue;
+      out.push({ id: el.dataset.id, kind: el.dataset.kind, zone: el.dataset.zone, fit: +el.dataset.fit,
+                 settled: t === undefined || (el.dataset.kind === "caption"
+                   ? (t >= start + 0.15 && t <= end - 0.05) : (t >= start + (settle ?? 0.55) && t <= end - 0.3)),
+                 x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+    }
+    return out;
+  }
+
+  function setLayer(l) { document.body.classList.remove("layer-front", "layer-behind"); if (l) document.body.classList.add("layer-" + l); }
+  function hasBehind() { return !!document.querySelector('[data-layer="behind"]'); }
+
+  return { init, seek, layout, setLayer, hasBehind, get duration() { return master ? master.duration() : 0; } };
+})();
+</script>
+</body>
+</html>

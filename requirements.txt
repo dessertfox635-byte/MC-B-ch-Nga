@@ -1,0 +1,5 @@
+faster-whisper>=1.2
+vieneu>=3.8
+soundfile
+numpy
+mediapipe          # kéo theo opencv-contrib-python (nhận diện mặt + tách người)

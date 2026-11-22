@@ -1,0 +1,8 @@
+{
+  "bich-nga": {
+    "name": "Bích Nga",
+    "reference": "voice/reference/bich-nga.wav",
+    "consent": "voice/consent/bich-nga.json",
+    "note": "Giọng mẫu và giấy đồng ý KHÔNG commit lên git (xem .gitignore)."
+  }
+}

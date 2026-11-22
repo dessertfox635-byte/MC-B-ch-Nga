@@ -1,0 +1,17 @@
+{
+  "name": "MC Bích Nga",
+  "role": "Dẫn chương trình sự kiện",
+  "cta": "Theo dõi Bích Nga",
+  "default_formats": [
+    "9:16"
+  ],
+  "voice": "bich-nga",
+  "theme": {
+    "accent": "#FFD23F",
+    "accent2": "#FF4D6D",
+    "ink": "#111111",
+    "paper": "#FFFFFF",
+    "hero": "#E3120B"
+  },
+  "caption_style": "kinetic"
+}

@@ -1,0 +1,4 @@
+# Tên riêng, thương hiệu, thuật ngữ để Whisper viết đúng chính tả (mỗi dòng một cụm)
+Bích Nga
+MC Bích Nga
+Khôi Nguyên

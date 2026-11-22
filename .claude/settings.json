@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/bin/python -m xuong:*)",
+      "Bash(python -m xuong:*)",
+      "Bash(node render/overlay.mjs:*)",
+      "Bash(ffmpeg:*)",
+      "Bash(ffprobe:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Read(./**)",
+      "Edit(./projects/**)",
+      "Write(./projects/**)",
+      "Write(./outbox/**)",
+      "Edit(./outbox/**)"
+    ],
+    "deny": [
+      "Read(./voice/reference/**)",
+      "Bash(rm -rf:*)",
+      "Bash(git push:*)"
+    ]
+  }
+}

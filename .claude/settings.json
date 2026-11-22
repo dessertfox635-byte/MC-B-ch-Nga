@@ -16,8 +16,7 @@
     ],
     "deny": [
       "Read(./voice/reference/**)",
-      "Bash(rm -rf:*)",
-      "Bash(git push:*)"
+      "Bash(rm -rf:*)"
     ]
   }
 }

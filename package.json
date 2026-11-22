@@ -1,0 +1,21 @@
+{
+  "name": "xuong-phim",
+  "version": "1.0.0",
+  "description": "Xưởng Phim – dựng phim tự động do Claude chỉ đạo",
+  "scripts": {
+    "doctor": ".venv/bin/python -m xuong doctor"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dessertfox635-byte/MC-B-ch-Nga.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dessertfox635-byte/MC-B-ch-Nga/issues"
+  },
+  "homepage": "https://github.com/dessertfox635-byte/MC-B-ch-Nga#readme",
+  "dependencies": {
+    "gsap": "3.13.0",
+    "playwright": "^1.56.0"
+  },
+  "private": true
+}

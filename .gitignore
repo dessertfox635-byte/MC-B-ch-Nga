@@ -1,0 +1,27 @@
+# môi trường
+.venv/
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+models/
+vendor/
+
+# dữ liệu dựng (lớn, riêng tư)
+projects/
+inbox/*
+!inbox/.gitkeep
+!inbox/README.md
+outbox/*
+!outbox/.gitkeep
+
+# DỮ LIỆU GIỌNG NÓI: sinh trắc học, không bao giờ đưa lên git
+voice/reference/
+voice/work/
+voice/consent/*
+!voice/consent/MAU-GIAY-DONG-Y.md
+
+# nhạc/âm thanh riêng
+assets/music/*
+!assets/music/README.md
+.env
